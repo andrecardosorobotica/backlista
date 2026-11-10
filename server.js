@@ -9,7 +9,7 @@ dotenv.config();
 const app = express();
 
 // ========================================
-// CONFIGURAÇÕES
+// CONFIGURAÇÕES GERAIS
 // ========================================
 
 app.use(cors({
@@ -21,22 +21,28 @@ app.use(cors({
 app.use(express.json());
 
 // ========================================
-// SUPABASE
+// CONFIGURAÇÃO DO SUPABASE
 // ========================================
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Configure SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY.");
+  throw new Error(
+    "Configure SUPABASE_URL e SUPABASE_PUBLISHABLE_KEY nas variáveis de ambiente."
+  );
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+const supabase = createClient(
+  supabaseUrl,
+  supabaseKey,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
   }
-});
+);
 
 // ========================================
 // ROTA PRINCIPAL
@@ -59,7 +65,7 @@ app.get("/", (req, res) => {
 });
 
 // ========================================
-// READ - LISTAR TAREFAS
+// READ - LISTAR TODAS AS TAREFAS
 // ========================================
 
 app.get("/tasks", async (req, res) => {
@@ -135,7 +141,7 @@ app.get("/tasks/:id", async (req, res) => {
 });
 
 // ========================================
-// CREATE - CRIAR TAREFA
+// CREATE - CRIAR NOVA TAREFA
 // ========================================
 
 app.post("/tasks", async (req, res) => {
@@ -364,7 +370,7 @@ app.delete("/tasks/:id", async (req, res) => {
 });
 
 // ========================================
-// TRATAMENTO DE ROTAS INEXISTENTES
+// TRATAMENTO DE ROTAS NÃO ENCONTRADAS
 // ========================================
 
 app.use((req, res) => {
@@ -375,7 +381,23 @@ app.use((req, res) => {
 });
 
 // ========================================
-// EXPORTAÇÃO PARA VERCEL
+// EXECUÇÃO LOCAL E VERCEL
 // ========================================
 
+// Na Vercel, a variável VERCEL é definida automaticamente.
+// Localmente, o servidor inicia normalmente na porta 3000.
+
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 3000;
+
+  app.listen(PORT, () => {
+    console.log("------------------------------------");
+    console.log("API de Lista de Tarefas iniciada!");
+    console.log(`Servidor: http://localhost:${PORT}`);
+    console.log(`Endpoint: http://localhost:${PORT}/tasks`);
+    console.log("------------------------------------");
+  });
+}
+
+// Exportação para Vercel
 export default app;
