@@ -8,21 +8,9 @@ dotenv.config();
 
 const app = express();
 
-// ========================================
-// CONFIGURAÇÕES GERAIS
-// ========================================
-
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || "*",
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
-
-app.use(express.json());
-
-// ========================================
+// ==========================================
 // CONFIGURAÇÃO DO SUPABASE
-// ========================================
+// ==========================================
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -33,29 +21,50 @@ if (!supabaseUrl || !supabaseKey) {
   );
 }
 
-const supabase = createClient(
-  supabaseUrl,
-  supabaseKey,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-);
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ========================================
-// ROTA PRINCIPAL
-// ========================================
+// ==========================================
+// CONFIGURAÇÃO DO CORS
+// ==========================================
+
+const allowedOrigins = [
+  "https://frontedlista.vercel.app",
+  "http://localhost:5500",
+  "http://127.0.0.1:5500"
+];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Origem não autorizada pelo CORS."));
+    }
+  },
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+
+// ==========================================
+// MIDDLEWARES
+// ==========================================
+
+app.use(express.json());
+
+// ==========================================
+// ROTA INICIAL
+// ==========================================
 
 app.get("/", (req, res) => {
   res.status(200).json({
-    success: true,
-    message: "API de Lista de Tarefas funcionando!",
-    version: "1.0.0",
+    message: "API da Lista de Tarefas funcionando!",
+    status: "online",
     endpoints: {
       listar: "GET /tasks",
-      buscar: "GET /tasks/:id",
+      consultar: "GET /tasks/:id",
       criar: "POST /tasks",
       atualizar: "PUT /tasks/:id",
       concluir: "PATCH /tasks/:id",
@@ -64,9 +73,9 @@ app.get("/", (req, res) => {
   });
 });
 
-// ========================================
-// READ - LISTAR TODAS AS TAREFAS
-// ========================================
+// ==========================================
+// LISTAR TODAS AS TAREFAS
+// ==========================================
 
 app.get("/tasks", async (req, res) => {
   try {
@@ -75,37 +84,36 @@ app.get("/tasks", async (req, res) => {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error("Erro ao listar tarefas:", error);
+      return res.status(500).json({
+        error: "Não foi possível listar as tarefas."
+      });
+    }
 
     return res.status(200).json({
-      success: true,
-      total: data.length,
       tasks: data
     });
 
   } catch (error) {
-    console.error("Erro ao listar tarefas:", error.message);
-
+    console.error("Erro interno:", error);
     return res.status(500).json({
-      success: false,
-      message: "Erro ao listar tarefas.",
-      error: error.message
+      error: "Erro interno do servidor."
     });
   }
 });
 
-// ========================================
-// READ - BUSCAR TAREFA POR ID
-// ========================================
+// ==========================================
+// CONSULTAR UMA TAREFA PELO ID
+// ==========================================
 
 app.get("/tasks/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
 
-    if (!/^[1-9]\d*$/.test(id)) {
+    if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({
-        success: false,
-        message: "ID inválido."
+        error: "ID da tarefa inválido."
       });
     }
 
@@ -113,89 +121,83 @@ app.get("/tasks/:id", async (req, res) => {
       .from("tasks")
       .select("*")
       .eq("id", id)
-      .maybeSingle();
+      .single();
 
-    if (error) throw error;
-
-    if (!data) {
+    if (error || !data) {
       return res.status(404).json({
-        success: false,
-        message: "Tarefa não encontrada."
+        error: "Tarefa não encontrada."
       });
     }
 
     return res.status(200).json({
-      success: true,
       task: data
     });
 
   } catch (error) {
-    console.error("Erro ao buscar tarefa:", error.message);
-
+    console.error("Erro ao consultar tarefa:", error);
     return res.status(500).json({
-      success: false,
-      message: "Erro ao buscar tarefa.",
-      error: error.message
+      error: "Erro interno do servidor."
     });
   }
 });
 
-// ========================================
-// CREATE - CRIAR NOVA TAREFA
-// ========================================
+// ==========================================
+// CADASTRAR UMA NOVA TAREFA
+// ==========================================
 
 app.post("/tasks", async (req, res) => {
   try {
-    const { title } = req.body || {};
+    const { title } = req.body;
 
-    if (typeof title !== "string" || !title.trim()) {
+    if (!title || typeof title !== "string" || !title.trim()) {
       return res.status(400).json({
-        success: false,
-        message: "O título da tarefa é obrigatório."
+        error: "O título da tarefa é obrigatório."
       });
     }
 
     const { data, error } = await supabase
       .from("tasks")
-      .insert({
-        title: title.trim(),
-        completed: false
-      })
+      .insert([
+        {
+          title: title.trim(),
+          completed: false
+        }
+      ])
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Erro ao cadastrar tarefa:", error);
+      return res.status(500).json({
+        error: "Não foi possível cadastrar a tarefa."
+      });
+    }
 
     return res.status(201).json({
-      success: true,
-      message: "Tarefa criada com sucesso!",
+      message: "Tarefa cadastrada com sucesso!",
       task: data
     });
 
   } catch (error) {
-    console.error("Erro ao criar tarefa:", error.message);
-
+    console.error("Erro ao cadastrar tarefa:", error);
     return res.status(500).json({
-      success: false,
-      message: "Erro ao criar tarefa.",
-      error: error.message
+      error: "Erro interno do servidor."
     });
   }
 });
 
-// ========================================
-// UPDATE - ATUALIZAR TAREFA
-// ========================================
+// ==========================================
+// ATUALIZAR UMA TAREFA
+// ==========================================
 
 app.put("/tasks/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const { title, completed } = req.body || {};
+    const id = Number(req.params.id);
+    const { title, completed } = req.body;
 
-    if (!/^[1-9]\d*$/.test(id)) {
+    if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({
-        success: false,
-        message: "ID inválido."
+        error: "ID da tarefa inválido."
       });
     }
 
@@ -204,8 +206,7 @@ app.put("/tasks/:id", async (req, res) => {
     if (title !== undefined) {
       if (typeof title !== "string" || !title.trim()) {
         return res.status(400).json({
-          success: false,
-          message: "Informe um título válido."
+          error: "O título não pode ficar vazio."
         });
       }
 
@@ -215,8 +216,7 @@ app.put("/tasks/:id", async (req, res) => {
     if (completed !== undefined) {
       if (typeof completed !== "boolean") {
         return res.status(400).json({
-          success: false,
-          message: "O campo completed deve ser booleano."
+          error: "O campo completed deve ser verdadeiro ou falso."
         });
       }
 
@@ -225,8 +225,7 @@ app.put("/tasks/:id", async (req, res) => {
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
-        success: false,
-        message: "Informe title ou completed para atualizar."
+        error: "Informe ao menos um campo para atualizar."
       });
     }
 
@@ -237,52 +236,50 @@ app.put("/tasks/:id", async (req, res) => {
       .select()
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Erro ao atualizar tarefa:", error);
+      return res.status(500).json({
+        error: "Não foi possível atualizar a tarefa."
+      });
+    }
 
     if (!data) {
       return res.status(404).json({
-        success: false,
-        message: "Tarefa não encontrada."
+        error: "Tarefa não encontrada."
       });
     }
 
     return res.status(200).json({
-      success: true,
       message: "Tarefa atualizada com sucesso!",
       task: data
     });
 
   } catch (error) {
-    console.error("Erro ao atualizar tarefa:", error.message);
-
+    console.error("Erro ao atualizar tarefa:", error);
     return res.status(500).json({
-      success: false,
-      message: "Erro ao atualizar tarefa.",
-      error: error.message
+      error: "Erro interno do servidor."
     });
   }
 });
 
-// ========================================
-// PATCH - CONCLUIR OU REABRIR TAREFA
-// ========================================
+// ==========================================
+// MARCAR TAREFA COMO CONCLUÍDA OU PENDENTE
+// ==========================================
 
 app.patch("/tasks/:id", async (req, res) => {
   try {
-    const { id } = req.params;
-    const { completed } = req.body || {};
+    const id = Number(req.params.id);
+    const { completed } = req.body;
 
-    if (!/^[1-9]\d*$/.test(id)) {
+    if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({
-        success: false,
-        message: "ID inválido."
+        error: "ID da tarefa inválido."
       });
     }
 
     if (typeof completed !== "boolean") {
       return res.status(400).json({
-        success: false,
-        message: "Informe completed como true ou false."
+        error: "Informe completed como verdadeiro ou falso."
       });
     }
 
@@ -293,46 +290,43 @@ app.patch("/tasks/:id", async (req, res) => {
       .select()
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Erro ao alterar status:", error);
+      return res.status(500).json({
+        error: "Não foi possível alterar o status da tarefa."
+      });
+    }
 
     if (!data) {
       return res.status(404).json({
-        success: false,
-        message: "Tarefa não encontrada."
+        error: "Tarefa não encontrada."
       });
     }
 
     return res.status(200).json({
-      success: true,
-      message: completed
-        ? "Tarefa concluída!"
-        : "Tarefa reaberta!",
+      message: "Status da tarefa atualizado com sucesso!",
       task: data
     });
 
   } catch (error) {
-    console.error("Erro ao alterar conclusão:", error.message);
-
+    console.error("Erro ao alterar status:", error);
     return res.status(500).json({
-      success: false,
-      message: "Erro ao alterar conclusão.",
-      error: error.message
+      error: "Erro interno do servidor."
     });
   }
 });
 
-// ========================================
-// DELETE - EXCLUIR TAREFA
-// ========================================
+// ==========================================
+// EXCLUIR UMA TAREFA
+// ==========================================
 
 app.delete("/tasks/:id", async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = Number(req.params.id);
 
-    if (!/^[1-9]\d*$/.test(id)) {
+    if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({
-        success: false,
-        message: "ID inválido."
+        error: "ID da tarefa inválido."
       });
     }
 
@@ -343,49 +337,56 @@ app.delete("/tasks/:id", async (req, res) => {
       .select()
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      console.error("Erro ao excluir tarefa:", error);
+      return res.status(500).json({
+        error: "Não foi possível excluir a tarefa."
+      });
+    }
 
     if (!data) {
       return res.status(404).json({
-        success: false,
-        message: "Tarefa não encontrada."
+        error: "Tarefa não encontrada."
       });
     }
 
     return res.status(200).json({
-      success: true,
       message: "Tarefa excluída com sucesso!",
       task: data
     });
 
   } catch (error) {
-    console.error("Erro ao excluir tarefa:", error.message);
-
+    console.error("Erro ao excluir tarefa:", error);
     return res.status(500).json({
-      success: false,
-      message: "Erro ao excluir tarefa.",
-      error: error.message
+      error: "Erro interno do servidor."
     });
   }
 });
 
-// ========================================
-// TRATAMENTO DE ROTAS NÃO ENCONTRADAS
-// ========================================
+// ==========================================
+// TRATAMENTO DE ERROS
+// ==========================================
 
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Rota não encontrada."
+app.use((err, req, res, next) => {
+  console.error("Erro no servidor:", err.message);
+
+  if (err.message === "Origem não autorizada pelo CORS.") {
+    return res.status(403).json({
+      error: err.message
+    });
+  }
+
+  return res.status(500).json({
+    error: "Ocorreu um erro interno no servidor."
   });
 });
 
-// ========================================
-// EXECUÇÃO LOCAL E VERCEL
-// ========================================
+// ==========================================
+// INICIALIZAÇÃO
+// ==========================================
 
-// Na Vercel, a variável VERCEL é definida automaticamente.
-// Localmente, o servidor inicia normalmente na porta 3000.
+// Na Vercel, a aplicação é exportada como função.
+// Localmente, o servidor é iniciado com app.listen().
 
 if (!process.env.VERCEL) {
   const PORT = process.env.PORT || 3000;
@@ -399,5 +400,4 @@ if (!process.env.VERCEL) {
   });
 }
 
-// Exportação para Vercel
 export default app;
